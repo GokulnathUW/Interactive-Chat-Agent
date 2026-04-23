@@ -2,8 +2,8 @@
 Guardrail — validates user input and generator output using a fast Cortex LLM.
 
 Public interface:
-    validate_input(query, session)            -> None  (raises ValueError if invalid)
-    is_output_valid(query, response, session) -> bool
+    validate_input(query, session)              -> None  (raises ValueError if invalid)
+    evaluate_output(query, response, session)   -> str   ("STRONG" | "MEDIUM" | "WEAK" | "INVALID")
 
 Both functions are stateless classifiers — retry logic and attempt limits are
 the responsibility of the app layer.
@@ -44,12 +44,22 @@ def validate_input(query: str, session: Session) -> None:
         )
 
 
-def is_output_valid(query: str, response: str, session: Session) -> bool:
-    """Return True if the generator response genuinely answers the query.
+_VALID_SCORES = {"STRONG", "MEDIUM", "WEAK"}
 
-    The app is responsible for deciding how many times to retry on False,
-    and for raising a user-friendly error when retries are exhausted.
+
+def evaluate_output(query: str, response: str, session: Session) -> str:
+    """Score the generator response against the user query.
+
+    Returns one of: "STRONG", "MEDIUM", "WEAK", "INVALID".
+    The agent retries on "INVALID"; passes the score through as confidence otherwise.
+    The app is responsible for retry limits and graceful failure.
     """
     prompt   = OUTPUT_GUARDRAIL_PROMPT.format(query=query, response=response)
     decision = _classify(prompt, session)
-    return decision.startswith("VALID")
+
+    # Normalise — extract the first recognised token in case of trailing punctuation
+    for token in ("STRONG", "MEDIUM", "WEAK", "INVALID"):
+        if decision.startswith(token):
+            return token
+
+    return "INVALID"  # unrecognised response → treat as invalid, trigger retry
