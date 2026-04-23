@@ -1,12 +1,12 @@
 """
-Guardrail — validates user input and generator output using a fast Cortex LLM.
+Guardrail — classifies user input and generator output using a fast Cortex LLM.
 
 Public interface:
-    validate_input(query, session)              -> None  (raises ValueError if invalid)
+    classify_input(query, session)              -> str   ("VALID" | "INVALID")
     evaluate_output(query, response, session)   -> str   ("STRONG" | "MEDIUM" | "WEAK" | "INVALID")
 
-Both functions are stateless classifiers — retry logic and attempt limits are
-the responsibility of the app layer.
+Both functions are pure classifiers — all branching logic (error raising,
+retry loops, user-facing messages) belongs in the agent layer.
 """
 import os
 from snowflake.snowpark import Session
@@ -25,23 +25,14 @@ def _classify(prompt: str, session: Session) -> str:
     return raw.strip().upper()
 
 
-def validate_input(query: str, session: Session) -> None:
+def classify_input(query: str, session: Session) -> str:
     """Classify the user query as in-scope or out-of-scope.
 
-    Raises:
-        ValueError: with a user-friendly message if the query is out of scope.
-                    The caller should display this message directly to the user.
+    Returns "VALID" or "INVALID". All downstream logic is the caller's responsibility.
     """
     prompt   = INPUT_GUARDRAIL_PROMPT.format(query=query)
     decision = _classify(prompt, session)
-
-    # startswith guards against "VALID." or "VALID\n" from the model
-    if not decision.startswith("VALID"):
-        raise ValueError(
-            "I can only answer questions about US Census demographics, housing, "
-            "income, education, geography, and foot-traffic patterns. "
-            "Please rephrase your question."
-        )
+    return "VALID" if decision.startswith("VALID") else "INVALID"
 
 
 _VALID_SCORES = {"STRONG", "MEDIUM", "WEAK"}
