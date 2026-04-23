@@ -11,5 +11,6 @@ description = ""
 dependencies = [
     "streamlit",
     "snowflake-snowpark-python",
+    "snowflake-core",
     "python-dotenv",
 ]
