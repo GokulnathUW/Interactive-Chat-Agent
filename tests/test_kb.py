@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Smoke-test the Cortex Search knowledge base by running a sample query
-and printing the retrieved chunks with their metadata.
+Knowledge base retrieval tests.
+
+Asserts that Cortex Search returns relevant, well-formed chunks
+for a range of query types. Runs multiple queries to verify topic
+coverage across demographics, economics, geography, and patterns.
 
 Run from the project root:
-    python scripts/test_kb.py
-    python scripts/test_kb.py "median household income"
+    python tests/test_kb.py
 """
 import sys
 import os
-import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -21,47 +22,114 @@ from src.session.snowflake_session import (
 )
 from src.knowledge_base.builder import CORTEX_SEARCH_SERVICE
 
-# Columns to retrieve — must match those in the CREATE CORTEX SEARCH SERVICE query
 RETURN_COLUMNS = ["CHUNK_TEXT", "COLUMN_NAME", "SNOWFLAKE_TABLE", "DATASET", "SOURCE_TYPE"]
-TOP_K = 5
+TOP_K          = 5
+DIVIDER        = "-" * 72
 
-DEFAULT_QUERY = "total population by race"
+VALID_SOURCE_TYPES = {
+    "field_descriptions",
+    "redistricting_descriptions",
+    "fips",
+    "geographic",
+    "geometry",
+    "patterns",
+}
 
 
-def run_query(query: str) -> None:
-    print(f"Connecting to Snowflake...")
+def search(service, query: str, top_k: int = TOP_K) -> list[dict]:
+    response = service.search(query=query, columns=RETURN_COLUMNS, limit=top_k)
+    return response.results
+
+
+def assert_results(label: str, results: list[dict], min_count: int = 1) -> None:
+    print(f"\n[{label}] — {len(results)} result(s)")
+    assert len(results) >= min_count, \
+        f"'{label}': expected at least {min_count} result(s), got {len(results)}"
+
+    for i, r in enumerate(results):
+        # Every chunk must have CHUNK_TEXT
+        assert r.get("CHUNK_TEXT"), \
+            f"'{label}' result {i}: CHUNK_TEXT is empty"
+        # Every chunk must have a known SNOWFLAKE_TABLE
+        assert r.get("SNOWFLAKE_TABLE"), \
+            f"'{label}' result {i}: SNOWFLAKE_TABLE is missing"
+        # SOURCE_TYPE must be one of the registered handler types
+        assert r.get("SOURCE_TYPE") in VALID_SOURCE_TYPES, \
+            f"'{label}' result {i}: unexpected SOURCE_TYPE '{r.get('SOURCE_TYPE')}'"
+
+        print(f"  [{i+1}] {r['SNOWFLAKE_TABLE']} | {r.get('COLUMN_NAME','—')} | {r['SOURCE_TYPE']}")
+
+
+def test_kb():
+    print("Connecting to Snowflake...")
     session = get_session()
+    print("  Connected.\n")
 
-    try:
-        root = Root(session)
-        service = (
-            root
-            .databases[SNOWFLAKE_KB_DATABASE]
-            .schemas[SNOWFLAKE_KB_SCHEMA]
-            .cortex_search_services[CORTEX_SEARCH_SERVICE]
-        )
+    root    = Root(session)
+    service = (
+        root
+        .databases[SNOWFLAKE_KB_DATABASE]
+        .schemas[SNOWFLAKE_KB_SCHEMA]
+        .cortex_search_services[CORTEX_SEARCH_SERVICE]
+    )
 
-        print(f"\nQuery: \"{query}\"")
-        print(f"Top {TOP_K} results from '{CORTEX_SEARCH_SERVICE}':\n")
-        print("-" * 72)
+    print(DIVIDER)
 
-        response = service.search(query=query, columns=RETURN_COLUMNS, limit=TOP_K)
+    # ── Demographics ──────────────────────────────────────────────────────────
+    results = search(service, "total population by race")
+    assert_results("Total population by race", results, min_count=3)
+    tables = {r["SNOWFLAKE_TABLE"] for r in results}
+    assert any("CBG" in t for t in tables), \
+        "Expected at least one CBG data table for a population query"
 
-        for i, result in enumerate(response.results, start=1):
-            print(f"[{i}] Table:       {result.get('SNOWFLAKE_TABLE', '—')}")
-            print(f"    Column:      {result.get('COLUMN_NAME', '—')}")
-            print(f"    Dataset:     {result.get('DATASET', '—')}")
-            print(f"    Source type: {result.get('SOURCE_TYPE', '—')}")
-            print(f"    Chunk text:  {result.get('CHUNK_TEXT', '—')}")
-            print()
+    print(DIVIDER)
 
-        print("-" * 72)
-        print(f"{len(response.results)} results returned.")
+    # ── Economics ─────────────────────────────────────────────────────────────
+    results = search(service, "median household income")
+    assert_results("Median household income", results, min_count=3)
+    chunk_texts = " ".join(r["CHUNK_TEXT"] for r in results).upper()
+    assert "INCOME" in chunk_texts or "B19" in chunk_texts, \
+        "Income query did not return income-related chunks"
 
-    finally:
-        session.close()
+    print(DIVIDER)
+
+    # ── Education ────────────────────────────────────────────────────────────
+    results = search(service, "bachelor's degree educational attainment")
+    assert_results("Educational attainment", results, min_count=3)
+
+    print(DIVIDER)
+
+    # ── Housing ──────────────────────────────────────────────────────────────
+    results = search(service, "housing occupancy renter owner")
+    assert_results("Housing occupancy", results, min_count=3)
+
+    print(DIVIDER)
+
+    # ── Geography / FIPS ─────────────────────────────────────────────────────
+    results = search(service, "state county geographic filter FIPS")
+    assert_results("Geographic / FIPS", results, min_count=1)
+    source_types = {r["SOURCE_TYPE"] for r in results}
+    assert source_types & {"fips", "geographic"}, \
+        "Expected at least one fips or geographic chunk for a geography query"
+
+    print(DIVIDER)
+
+    # ── Foot-traffic patterns ─────────────────────────────────────────────────
+    results = search(service, "foot traffic visitor mobility patterns")
+    assert_results("Foot-traffic patterns", results, min_count=1)
+    assert any(r["SOURCE_TYPE"] == "patterns" for r in results), \
+        "Expected at least one patterns chunk for a mobility query"
+
+    print(DIVIDER)
+
+    # ── Redistricting ─────────────────────────────────────────────────────────
+    results = search(service, "redistricting census block group race total")
+    assert_results("Redistricting data", results, min_count=1)
+
+    print(DIVIDER)
+    print("All KB tests passed.")
+    session.close()
 
 
 if __name__ == "__main__":
-    query = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_QUERY
-    run_query(query)
+    test_kb()

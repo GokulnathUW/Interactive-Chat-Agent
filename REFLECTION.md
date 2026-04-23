@@ -112,13 +112,16 @@ Also, for Cortex Search, I prepend recent user turns to the search query so that
 I took some conscious UX decisions:
 
 1. I wanted the web interface to be very utilitarian. I didn't want to spend too much time building the web interface, that I risk not finishing my minimum goals for the agent. I felt Streamlit was the right call for a 24-hour assignment. It handles session state, chat UI, secrets management, and one-click public deployment out of the box. Building a React/Flask stack would have taken most of the time budget and added no value to the AI engineering being evaluated.
+
 2. User not only gets the response but also a confidence score produced by the output guardrail. As mentioned before, The output guardrail produces STRONG / MEDIUM / WEAK for every response. Surfacing this to the user is an honest signal,  it tells them how much to trust the answer without hiding the uncertainty behind a confident-sounding response. Hiding the score would make the agent look more polished but less trustworthy. With evaluations not setup, I felt this to be a bare minimum to guarantee reliability.
+
 3. User also sees the generated SQL in an expander. Two reasons. First, a power user or engineer can verify the SQL against the data model and spot if the model picked the wrong table or column. Second, it is a transparency signal — showing the SQL proves the answer is grounded in a real query against real data, not hallucinated. The expander keeps it out of the way for users who do not care. Also, Some may not be masters in coding in SQL but they can be profiecient enough to understand and validate a query (I took this motivation from RLHF - humans are good at criticing, not generating).
-4. The stream progress messages every few seconds instead of a spinner. The full pipeline (guardrail → Cortex Search → SQL LLM → Snowflake query →
 
-generator LLM → output guardrail) might sometimes take 15–40 seconds depending on the query complexity. A static spinner for that long creates anxiety — users do not know if the app has frozen. Rotating messages serve two purposes: they confirm the app is alive, and they reduce perceived wait time (not backed by research but a simple self reflection). The wait messages were made to be funny, motivated by excessive Qwen usage.
+4. The stream progress messages every few seconds instead of a spinner. The full pipeline (guardrail → Cortex Search → SQL LLM → Snowflake query → generator LLM → output guardrail) might sometimes take 15–40 seconds depending on the query complexity. A static spinner for that long creates anxiety — users do not know if the app has frozen. Rotating messages serve two purposes: they confirm the app is alive, and they reduce perceived wait time (not backed by research but a simple self reflection). The wait messages were made to be funny, motivated by excessive Qwen usage.
 
-1. The app currently has a 2-minute hard timeout. Without it a hung Snowflake query or LLM call would block the thread indefinitely. The timeout gives a clean error and frees the UI.
+5. The app currently has a 2-minute hard timeout. Without it a hung Snowflake query or LLM call would block the thread indefinitely. The timeout gives a clean error and frees the UI.
+
+Complex queries like the stress test (county-level aggregation across all of Texas with four metrics) took well over 60 seconds. This is a known ceiling: SNOWFLAKE.CORTEX.COMPLETE via the SQL API is a blocking call with no streaming. The full response must arrive before the pipeline can continue. A future fix is to replace the SQL API call with Cortex's REST API, which supports streaming
 
 ### Technical issues discovered during testing
 
@@ -140,7 +143,6 @@ The unimplemented features are few:
 - Also, overall metrics like latency, LLM cost could be also be tracked and visualized in a dashboard.
 - The current app also doesn't track retries. This is important in investigating where the LLM costs are spent
 - Few simple features like getting feedback from the user on responses
-- The current tests are smoke tests. Would add unit tests for the prompt-building logic, the FIPS join extraction, and the chunk parsing
 - Capture few known-good (query, SQL, answer) triplets and alert (me) when a prompt change causes a regression
 
 Some optimizations could be:
@@ -156,6 +158,8 @@ Some optimizations could be:
 [5] This is less important but knowledge base building part is very rigid at the moment. This must be made more flexible in the future.
 
 [6] Identical queries within a session could be answered from cache instead of re-running through the full pipeline
+
+[7] Replace CORTEX.COMPLETE SQL API calls with the Cortex REST API to enable token streaming. This alone would make the app feel significantly faster for complex queries without any change to the pipeline logic.
 
 ---
 
@@ -173,12 +177,12 @@ Some optimizations could be:
 
 There are four test files:
 
-- test_connection.py  — verifies credentials and basic connectivity. Useful as a pre-flight check before deploying.
-- test_kb.py          — queries Cortex Search directly to confirm the knowledge base was built correctly and retrieval returns sensible chunks.
-- test_text_to_sql.py — checks that the SQL generation stage produces valid, executable SQL for a handful of known questions.
-- test_agent.py       — end-to-end smoke test for the full pipeline, including multi-turn context and the stress test query.
+- test_connection.py  — asserts credentials, both databases, and all required tables are present
+- test_kb.py          — asserts Cortex Search returns relevant, well-formed chunks across topics
+- test_text_to_sql.py — asserts SQL structure, FIPS join correctness, and executability
+- test_agent.py       — end-to-end tests: result structure, guardrails, multi-turn, and graceful degradation
 
-As pointed earlier in things I'd add with more time, the tests print results for manual inspection rather than asserting exact strings. The output guardrail confidence score is the closest thing to an automated quality assertion. This can be upgraded to a complete evaluation and monitoring suite.
+As pointed earlier in things I'd add with more time, the tests now assert structural and behavioral properties. The output guardrail confidence score is the closest thing to an automated quality assertion. This can be upgraded to a complete evaluation and monitoring suite.
 
 ## 5. AI Usage Declaration
 

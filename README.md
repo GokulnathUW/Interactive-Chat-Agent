@@ -108,10 +108,10 @@ src/
 scripts/
   build_kb.py               — entry point for the one-time KB build
 tests/
-  test_connection.py        — verifies Snowflake credentials and connectivity
-  test_kb.py                — queries the Cortex Search service directly
-  test_text_to_sql.py       — checks SQL generation for a handful of questions
-  test_agent.py             — end-to-end smoke test for the full pipeline
+  test_connection.py        — asserts credentials, both databases, and all required tables are present
+  test_kb.py                — asserts Cortex Search returns relevant, well-formed chunks across topics
+  test_text_to_sql.py       — asserts SQL structure, FIPS join correctness, and executability
+  test_agent.py             — end-to-end tests: result structure, guardrails, multi-turn, and graceful degradation
 ```
 
 ---
@@ -142,12 +142,15 @@ Each query retrieves 10 chunks from the knowledge base. This was chosen as a bal
 
 ### 6. The Streamlit app runs the agent in a background thread
 
-Streamlit's execution model is single-threaded. Because the full pipeline takes 15–30 seconds, running it synchronously would block the UI entirely. The agent runs in a daemon thread while the main Streamlit thread polls for completion and updates a status message every few seconds. Anything that touches Streamlit state (`st.cache_resource`, `st.session_state`) is resolved in the main thread before the background thread starts, to avoid thread-safety issues.
+Streamlit's execution model is single-threaded. Because the full pipeline takes 15–30 seconds for simple queries, running it synchronously would block the UI entirely. The agent runs in a daemon thread while the main Streamlit thread polls for completion and updates a status message every few seconds. Anything that touches Streamlit state (`st.cache_resource`, `st.session_state`) is resolved in the main thread before the background thread starts, to avoid thread-safety issues.
+
+Complex multi-table queries (like the stress test — county-level aggregation across all of Texas with four metrics) can take well over 60 seconds. This is a known limitation: `SNOWFLAKE.CORTEX.COMPLETE` is a blocking call with no streaming support via the SQL API, so the app must wait for the full LLM response before doing anything. A future improvement would be to use Cortex's REST API, which supports streaming, so partial responses could be shown incrementally rather than waiting for the full answer.
 
 ---
 
 ## Known limitations
 
+- Complex multi-table queries can take over 60 seconds end-to-end. `SNOWFLAKE.CORTEX.COMPLETE` is a blocking call — there is no streaming via the SQL API, so the full LLM response must arrive before the next pipeline stage begins.
 - The output guardrail does not have conversation history, so follow-up questions may score MEDIUM or WEAK even when the answer is correct.
 - Queries spanning many geographic areas (e.g. "all 50 states") may not retrieve all the right columns within the 10-chunk retrieval limit.
 - The knowledge base covers 2020 ACS data. Questions requiring comparisons to 2019 values will be answered with 2020 figures unless the question specifically references foot-traffic patterns, which are from 2019.
