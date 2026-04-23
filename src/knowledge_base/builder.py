@@ -90,22 +90,27 @@ def chunk_field_descriptions(rows: list, dataset: str) -> list:
 def chunk_fips_codes(table: str, dataset: str) -> list:
     """Create a single schema-description chunk for a FIPS codes table.
 
-    FIPS lookups are done at query time via a SQL JOIN — the LLM writes
-    WHERE f.state = 'California' rather than looking up FIPS values from the KB.
-    The KB only needs to tell the LLM the table exists and its column names.
+    FIPS lookups are done at query time via a SQL JOIN using FIPS prefix
+    extraction from CENSUS_BLOCK_GROUP — see SQL_GENERATION_PROMPT for the
+    exact join pattern. The KB chunk only advertises the table's existence
+    and accurate column semantics for geographic filtering.
 
-    Confirmed schema: STATE, STATE_FIPS, COUNTY_FIPS, COUNTY, CLASS_CODE,
-    census_block_group (join key).
+    Confirmed schema (5 columns — NO census_block_group column):
+        STATE       — 2-char uppercase state abbreviation (e.g. 'TX', 'CA')
+        STATE_FIPS  — 2-digit zero-padded string (e.g. '48', '06')
+        COUNTY      — county name with "County" suffix (e.g. 'Travis County')
+        COUNTY_FIPS — 3-digit zero-padded string (e.g. '453', '037')
+        CLASS_CODE  — county class code
     """
     chunk_text = (
         f"Table: {table} | "
         "FIPS geographic lookup table — join to filter by state or county | "
-        "census_block_group: 12-digit FIPS code (primary key, joins all CBG tables) | "
-        "state: state name (e.g. 'California') | "
-        "state_fips: 2-digit state FIPS code | "
-        "county: county name (e.g. 'Los Angeles County') | "
-        "county_fips: 5-digit county FIPS code | "
-        "class_code: Census geographic class code"
+        "STATE: 2-character uppercase state abbreviation (e.g. 'TX', 'CA', 'NY') | "
+        "STATE_FIPS: 2-digit zero-padded state FIPS code (e.g. '48', '06') | "
+        "COUNTY: county name including 'County' suffix (e.g. 'Travis County', 'Los Angeles County') | "
+        "COUNTY_FIPS: 3-digit zero-padded county FIPS code (e.g. '453', '037') | "
+        "CLASS_CODE: Census county class code | "
+        "NOTE: this table has NO census_block_group column — join via FIPS prefix extraction"
     )
     return [{
         "CHUNK_TEXT":      chunk_text,
