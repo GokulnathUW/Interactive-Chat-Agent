@@ -48,7 +48,8 @@ _PROGRESS_MESSAGES = [
 _SHUFFLED_MESSAGES = random.sample(_PROGRESS_MESSAGES, len(_PROGRESS_MESSAGES))
 
 _FIRST_MSG_DELAY_S = 10   # seconds before first message
-_MSG_INTERVAL_S    = 8    # seconds between messages
+_MSG_INTERVAL_S    = 6    # seconds between messages
+_TIMEOUT_S         = 120  # give up after 2 minutes
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -172,10 +173,14 @@ if prompt := st.chat_input("Ask about US Census data…"):
         threading.Thread(target=_run_agent, daemon=True).start()
 
         # Poll in the main thread; show witty messages starting at 10 s
-        start   = time.monotonic()
-        msg_idx = 0
+        start     = time.monotonic()
+        msg_idx   = 0
+        timed_out = False
         while not done_event.wait(timeout=1.0):
             elapsed = time.monotonic() - start
+            if elapsed >= _TIMEOUT_S:
+                timed_out = True
+                break
             if elapsed >= _FIRST_MSG_DELAY_S + msg_idx * _MSG_INTERVAL_S:
                 status.markdown(
                     f"*{_SHUFFLED_MESSAGES[msg_idx % len(_SHUFFLED_MESSAGES)]}*"
@@ -184,8 +189,12 @@ if prompt := st.chat_input("Ask about US Census data…"):
 
         status.empty()   # clear the last progress message before rendering result
 
+        if timed_out:
+            msg_text = "The query timed out after 2 minutes. Try asking a more specific question or narrowing the geography."
+            st.warning(msg_text)
+            st.session_state.messages.append({"role": "assistant", "content": f"⚠️ {msg_text}"})
         # Handle outcome
-        if "error" in result_box:
+        elif "error" in result_box:
             exc = result_box["error"]
             if isinstance(exc, ValueError):
                 msg_text = str(exc)

@@ -76,6 +76,21 @@ def main():
             "What about Texas?",
             session, sql_history, nl_history)
 
+    # --- 6. Stress test: multi-table join + county-level aggregation across a whole state ---
+    # Tests: simultaneous retrieval of columns from 3+ ACS tables, percentage calculations,
+    # county-level GROUP BY, ORDER BY on an aggregate, and a large geographic scope (all of Texas).
+    print(DIVIDER)
+    import time
+    stress_query = (
+        "For each county in Texas, give me the total population, the percentage of households "
+        "earning under $25,000 per year, the percentage of adults with at least a bachelor's "
+        "degree, and the average number of people per household. Sort by total population descending."
+    )
+    stress_start = time.monotonic()
+    result = run("6. Stress test (multi-table, county aggregation, Texas)", stress_query, session)
+    stress_elapsed = time.monotonic() - stress_start
+    print(f"Elapsed: {stress_elapsed:.1f}s")
+
     print(DIVIDER)
     print("\nDone.")
     session.close()
