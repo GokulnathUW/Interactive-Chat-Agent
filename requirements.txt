@@ -1,0 +1,14 @@
+# Core Snowflake integration — Snowpark session, Cortex LLM/Search functions
+snowflake-snowpark-python==1.49.0
+
+# Snowflake Python SDK — required for Cortex Search service client (snowflake.core.Root)
+snowflake-core==1.12.0
+
+# Web UI
+streamlit==1.56.0
+
+# Load Snowflake credentials from .env
+python-dotenv==1.2.2
+
+# Testing
+pytest==9.0.3

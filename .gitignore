@@ -1,0 +1,25 @@
+# Environment & secrets
+.env
+
+# Virtual environment
+.venv/
+
+# Planning & internal notes
+PLANNING.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
