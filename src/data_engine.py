@@ -20,15 +20,17 @@ def run_query(sql: str, session: Session) -> str:
     """
     try:
         ensure_session_context(session, use_kb=False)
-        rows = session.sql(sql).collect()
+        df   = session.sql(sql)
+        rows = df.collect()
 
         if not rows:
             return "No data found."
 
-        # Header row from column names, then one line per data row
-        headers = ",".join(rows[0].__fields__)
+        # Column names come from the DataFrame schema, not the Row objects
+        headers = ",".join(df.columns)
         data    = "\n".join(",".join(str(v) for v in row) for row in rows)
         return f"{headers}\n{data}"
 
-    except Exception:
+    except Exception as exc:
+        print(f"  [data_engine] SQL error: {exc}")
         return "I'm having trouble retrieving the data. The query may reference unavailable columns or tables."
