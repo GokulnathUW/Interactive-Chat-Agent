@@ -9,9 +9,7 @@ requires-python = ">= 3.11"
 version = "0.0.1"
 description = ""
 dependencies = [
-    "streamlit[snowflake]"
+    "streamlit",
+    "snowflake-snowpark-python",
+    "python-dotenv",
 ]
-
-[tool.uv]
-# earlier versions of numba require a python version < 3.11
-constraint-dependencies = ["numba>=0.56.0"]
