@@ -48,7 +48,7 @@ _PROGRESS_MESSAGES = [
 _SHUFFLED_MESSAGES = random.sample(_PROGRESS_MESSAGES, len(_PROGRESS_MESSAGES))
 
 _FIRST_MSG_DELAY_S = 10   # seconds before first message
-_MSG_INTERVAL_S    = 4    # seconds between messages
+_MSG_INTERVAL_S    = 8    # seconds between messages
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
