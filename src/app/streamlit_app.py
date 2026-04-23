@@ -145,6 +145,13 @@ if prompt := st.chat_input("Ask about US Census data…"):
     with st.chat_message("assistant"):
         status = st.empty()   # single placeholder reused for all progress messages
 
+        # Resolve everything that touches Streamlit state in the MAIN thread
+        # before handing off to the background thread. st.cache_resource and
+        # st.session_state are not safe to access from a non-main thread.
+        session  = _get_session()
+        sql_hist = list(st.session_state.sql_history)
+        nl_hist  = list(st.session_state.nl_history)
+
         # Run the agent in a background thread so the main thread can update the UI
         result_box: dict = {}
         done_event = threading.Event()
@@ -153,9 +160,9 @@ if prompt := st.chat_input("Ask about US Census data…"):
             try:
                 result_box["result"] = agent_run(
                     query=prompt,
-                    session=_get_session(),
-                    sql_history=st.session_state.sql_history,
-                    nl_history=st.session_state.nl_history,
+                    session=session,
+                    sql_history=sql_hist,
+                    nl_history=nl_hist,
                 )
             except Exception as exc:
                 result_box["error"] = exc
@@ -188,6 +195,7 @@ if prompt := st.chat_input("Ask about US Census data…"):
                 st.warning(msg_text)
                 st.session_state.messages.append({"role": "assistant", "content": f"⚠️ {msg_text}"})
             else:
+                print(f"  [app] Unhandled exception: {exc}")
                 msg_text = "Something went wrong connecting to the data source. Please try again."
                 st.error(msg_text)
                 st.session_state.messages.append({"role": "assistant", "content": f"❌ {msg_text}"})
