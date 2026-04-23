@@ -84,7 +84,7 @@ def chunk_field_descriptions(rows: list, dataset: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Handlers: not yet implemented — stubs return empty and log a warning
+# Handlers: schema-only chunks (no rows loaded from Snowflake)
 # ---------------------------------------------------------------------------
 
 def chunk_fips_codes(table: str, dataset: str) -> list:
@@ -323,7 +323,6 @@ def _ensure_kb_database_and_schema(session: Session) -> None:
 
     session.sql(f"CREATE DATABASE IF NOT EXISTS {db_id}").collect()
     session.sql(f"CREATE SCHEMA IF NOT EXISTS {db_id}.{schema_id}").collect()
-    
     print(f"  KB target: {SNOWFLAKE_KB_DATABASE}.{SNOWFLAKE_KB_SCHEMA} (created if absent)")
 
 

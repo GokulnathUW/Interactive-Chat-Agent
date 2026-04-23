@@ -172,18 +172,15 @@ if prompt := st.chat_input("Ask about US Census data…"):
         threading.Thread(target=_run_agent, daemon=True).start()
 
         # Poll in the main thread; show witty messages starting at 10 s
-        start      = time.monotonic()
-        msg_idx    = 0
-        msg_shown  = False
+        start   = time.monotonic()
+        msg_idx = 0
         while not done_event.wait(timeout=1.0):
             elapsed = time.monotonic() - start
-            next_msg_at = _FIRST_MSG_DELAY_S + msg_idx * _MSG_INTERVAL_S
-            if elapsed >= next_msg_at:
+            if elapsed >= _FIRST_MSG_DELAY_S + msg_idx * _MSG_INTERVAL_S:
                 status.markdown(
                     f"*{_SHUFFLED_MESSAGES[msg_idx % len(_SHUFFLED_MESSAGES)]}*"
                 )
-                msg_idx   += 1
-                msg_shown  = True
+                msg_idx += 1
 
         status.empty()   # clear the last progress message before rendering result
 

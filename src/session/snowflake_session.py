@@ -69,15 +69,3 @@ def quotes_literal(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
 
 
-def full_table_name(table: str, use_kb: bool = True) -> str:
-    """Return a fully-qualified table name: "DATABASE"."SCHEMA"."TABLE".
-
-    Pass use_kb=False to build a name rooted in the census data database.
-    """
-    def q(x: str) -> str:
-        t = x.strip()
-        return '"' + t.replace('"', '""') + '"'
-
-    db     = SNOWFLAKE_KB_DATABASE   if use_kb else SNOWFLAKE_DATA_DATABASE
-    schema = SNOWFLAKE_KB_SCHEMA     if use_kb else SNOWFLAKE_DATA_SCHEMA
-    return ".".join(q(x) for x in (db, schema, table))
