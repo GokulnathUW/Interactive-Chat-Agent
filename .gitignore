@@ -23,3 +23,7 @@ htmlcov/
 .vscode/
 .idea/
 *.swp
+
+# Notes
+TODO.md
+LEARNING.md
