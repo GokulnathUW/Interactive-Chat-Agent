@@ -1,22 +1,16 @@
 """Tools for the collect_data subgraph."""
 
 import os
-from dataclasses import dataclass
 
 from langchain.tools import ToolRuntime, tool
 from snowflake.core import Root
-from snowflake.snowpark import Session
 
+from src.context import AgentContext
 from src.session.snowflake_session import SNOWFLAKE_KB_DATABASE, SNOWFLAKE_KB_SCHEMA
 
 CORTEX_SEARCH_SERVICE = os.getenv("CORTEX_SEARCH_SERVICE", "CBG_FIELD_SEARCH")
 _SEARCH_COLUMNS = ["CHUNK_TEXT", "COLUMN_NAME", "SNOWFLAKE_TABLE", "DATASET", "SOURCE_TYPE"]
 _TOP_K = 10
-
-
-@dataclass
-class AgentContext:
-    session: Session
 
 
 @tool

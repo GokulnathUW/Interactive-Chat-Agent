@@ -36,12 +36,34 @@ def get_snowflake_session_parameters() -> dict:
     return params
 
 
+_session: Session | None = None
+
+
+def _session_is_alive(session: Session) -> bool:
+    try:
+        session.sql("SELECT 1").collect()
+        return True
+    except Exception:
+        return False
+
+
 def get_session() -> Session:
-    """Create and return a Snowpark session using environment credentials."""
+    """Return a live Snowpark session, creating one if the last has gone stale."""
+    global _session
+    if _session is not None and _session_is_alive(_session):
+        return _session
+    if _session is not None:
+        try:
+            _session.close()
+        except Exception:
+            pass
+        _session = None
     try:
         params = get_snowflake_session_parameters()
-        return Session.builder.configs(params).create()
+        _session = Session.builder.configs(params).create()
+        return _session
     except Exception as e:
+        _session = None
         raise ConnectionError(
             f"I'm having trouble connecting to Snowflake: {e}"
         ) from e

@@ -2,24 +2,11 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from src.collect_data.nodes import run_query, sql_agent, validate_query
+from src.collect_data.dql import validate_query
+from src.collect_data.nodes import run_query, sql_agent
+from src.collect_data.routing import after_run, after_validate
 from src.collect_data.state import CollectDataState
-from src.collect_data.tools import AgentContext
-
-
-def after_validate(state: CollectDataState) -> str:
-    error = state.get("error") or ""
-    if not error:
-        return "run_query"
-    if error == "UNSUPPORTED_QUERY":
-        return END
-    return "sql_agent"
-
-
-def after_run(state: CollectDataState) -> str:
-    if state.get("error"):
-        return "sql_agent"
-    return END
+from src.context import AgentContext
 
 # Build the graph
 builder = StateGraph(CollectDataState, context_schema=AgentContext)
