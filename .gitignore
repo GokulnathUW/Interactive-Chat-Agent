@@ -27,3 +27,6 @@ htmlcov/
 # Notes
 TODO.md
 LEARNINGS.md
+
+# Testing Notebooks
+notebook*.ipynb
