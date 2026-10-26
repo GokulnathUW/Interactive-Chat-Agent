@@ -19,3 +19,4 @@ class ConversationState(MessagesState):
 
     input_scope: NotRequired[InputScope]
     output_score: NotRequired[OutputScore]
+    sql: NotRequired[str]

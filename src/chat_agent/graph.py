@@ -1,11 +1,19 @@
 """chat_agent parent graph."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from langchain.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 
 from src.chat_agent.nodes import generator, input_guardrail, output_guardrail, reject_input
 from src.chat_agent.routing import after_input
 from src.chat_agent.state import ConversationState
 from src.context import AgentContext
+
+if TYPE_CHECKING:
+    from snowflake.snowpark import Session
 
 builder = StateGraph(ConversationState, context_schema=AgentContext)
 builder.add_node("input_guardrail", input_guardrail)
@@ -24,3 +32,28 @@ builder.add_edge("generator", "output_guardrail")
 builder.add_edge("output_guardrail", END)
 
 graph = builder.compile()
+
+
+def _last_ai_text(messages) -> str:
+    for message in reversed(messages):
+        if message.type == "ai" and message.content:
+            text = message.content if isinstance(message.content, str) else str(message.content)
+            if text.strip():
+                return text
+    return ""
+
+
+def run(query: str, session: Session, history: list | None = None) -> dict:
+    """Invoke the parent graph. history is prior Human/AI messages only."""
+    result = graph.invoke(
+        {"messages": [*(history or []), HumanMessage(content=query)]},
+        context=AgentContext(session=session),
+    )
+    scope = result.get("input_scope")
+    score = result.get("output_score")
+    return {
+        "answer": _last_ai_text(result["messages"]),
+        "sql": result.get("sql") or "",
+        "confidence": score.decision if score is not None else "",
+        "rejected": scope is not None and scope.decision == "INVALID",
+    }
