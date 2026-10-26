@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from langchain.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from src.chat_agent.nodes import generator, input_guardrail, output_guardrail, reject_input
@@ -31,7 +32,7 @@ builder.add_edge("reject_input", END)
 builder.add_edge("generator", "output_guardrail")
 builder.add_edge("output_guardrail", END)
 
-graph = builder.compile()
+graph = builder.compile(checkpointer=InMemorySaver())
 
 
 def _last_ai_text(messages) -> str:
@@ -43,11 +44,12 @@ def _last_ai_text(messages) -> str:
     return ""
 
 
-def run(query: str, session: Session, history: list | None = None) -> dict:
-    """Invoke the parent graph. history is prior Human/AI messages only."""
+def run(query: str, session: Session, thread_id: str) -> dict:
+    """Invoke the parent graph. thread_id selects the checkpointed conversation."""
     result = graph.invoke(
-        {"messages": [*(history or []), HumanMessage(content=query)]},
+        {"messages": [HumanMessage(content=query)]},
         context=AgentContext(session=session),
+        config={"configurable": {"thread_id": thread_id}},
     )
     scope = result.get("input_scope")
     score = result.get("output_score")

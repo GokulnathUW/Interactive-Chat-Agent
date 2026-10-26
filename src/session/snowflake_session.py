@@ -1,5 +1,8 @@
 import os
+
 from dotenv import load_dotenv
+from langchain.agents.middleware import wrap_model_call
+from langchain.chat_models import init_chat_model
 from snowflake.snowpark import Session
 
 load_dotenv()
@@ -67,6 +70,21 @@ def get_session() -> Session:
         raise ConnectionError(
             f"I'm having trouble connecting to Snowflake: {e}"
         ) from e
+
+
+def cortex_model(name: str, session: Session):
+    """ChatSnowflake that uses the app session instead of opening another connection."""
+    return init_chat_model(name, model_provider="snowflake", session=session)
+
+
+@wrap_model_call
+def use_context_session(request, handler):
+    # create_agent builds the model at import; session only exists at invoke.
+    session = request.runtime.context.session
+    name = getattr(request.model, "model", None)
+    if not name:
+        raise RuntimeError("Cannot bind Snowflake session: chat model has no .model name")
+    return handler(request.override(model=cortex_model(name, session)))
 
 
 def ensure_session_context(session: Session, use_kb: bool = True) -> None:

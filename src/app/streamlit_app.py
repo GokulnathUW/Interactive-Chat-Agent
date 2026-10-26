@@ -1,18 +1,18 @@
 """US Census Data Chat Agent — Streamlit UI.
 
-LangGraph owns the pipeline. This app owns the transcript: prior Human/AI
-turns go back into `run()` so follow-ups work without a checkpointer.
+LangGraph checkpoints the conversation by thread_id. This app keeps a display
+list and a per-browser thread_id; it does not replay history into invoke.
 """
 import os
 import random
 import sys
 import threading
 import time
+import uuid
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import streamlit as st
-from langchain.messages import AIMessage, HumanMessage
 
 from src.chat_agent.graph import run as agent_run
 from src.session.snowflake_session import get_session
@@ -57,6 +57,8 @@ st.set_page_config(
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
 
 _CONFIDENCE_STYLE = {
     "HIGH": ("🟢", "green", "High confidence — response directly answers the question"),
@@ -64,16 +66,6 @@ _CONFIDENCE_STYLE = {
     "LOW": ("🟠", "darkorange", "Low confidence — data may be partial or approximate"),
     "INVALID": ("🔴", "crimson", "Invalid — response does not answer the question"),
 }
-
-
-def _history_messages(stored: list[dict]) -> list:
-    history = []
-    for msg in stored:
-        if msg["role"] == "user":
-            history.append(HumanMessage(content=msg["content"]))
-        elif msg["role"] == "assistant":
-            history.append(AIMessage(content=msg["content"]))
-    return history
 
 
 def _render_confidence(confidence: str) -> None:
@@ -117,6 +109,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🗑️ Clear conversation", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.thread_id = str(uuid.uuid4())
         st.rerun()
 
 st.title("US Census Data Chat Agent")
@@ -136,13 +129,13 @@ if prompt := st.chat_input("Ask about US Census data…"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    history = _history_messages(st.session_state.messages)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
         status = st.empty()
 
         session = get_session()
+        thread_id = st.session_state.thread_id
 
         result_box: dict = {}
         done_event = threading.Event()
@@ -152,7 +145,7 @@ if prompt := st.chat_input("Ask about US Census data…"):
                 result_box["result"] = agent_run(
                     query=prompt,
                     session=session,
-                    history=history,
+                    thread_id=thread_id,
                 )
             except Exception as exc:
                 result_box["error"] = exc

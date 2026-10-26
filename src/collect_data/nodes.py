@@ -11,7 +11,7 @@ from src.collect_data.prompts import SQL_AGENT_SYSTEM_PROMPT
 from src.collect_data.state import CollectDataState
 from src.collect_data.tools import retrieve_context
 from src.context import AgentContext
-from src.session.snowflake_session import ensure_session_context
+from src.session.snowflake_session import ensure_session_context, use_context_session
 
 SQL_MODEL = os.getenv("SQL_MODEL", "mistral-large2")
 
@@ -20,6 +20,7 @@ sql_agent = create_agent(
     model=init_chat_model(SQL_MODEL, model_provider="snowflake"),
     tools=[retrieve_context],
     system_prompt=SQL_AGENT_SYSTEM_PROMPT,
+    middleware=[use_context_session],
     state_schema=CollectDataState,
     context_schema=AgentContext,
     name="sql_agent",
