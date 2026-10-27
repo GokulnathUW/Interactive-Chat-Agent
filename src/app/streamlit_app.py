@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from queue import Empty, Queue
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -133,40 +134,58 @@ if prompt := st.chat_input("Ask about US Census data…"):
 
     with st.chat_message("assistant"):
         status = st.empty()
+        body = st.empty()
 
         session = get_session()
         thread_id = st.session_state.thread_id
-
-        result_box: dict = {}
-        done_event = threading.Event()
+        events: Queue = Queue()
 
         def _run_agent() -> None:
             try:
-                result_box["result"] = agent_run(
+                for event in agent_run(
                     query=prompt,
                     session=session,
                     thread_id=thread_id,
-                )
+                ):
+                    events.put(event)
             except Exception as exc:
-                result_box["error"] = exc
+                events.put({"type": "error", "error": exc})
             finally:
-                done_event.set()
+                events.put({"type": "end"})
 
         threading.Thread(target=_run_agent, daemon=True).start()
 
         start = time.monotonic()
         msg_idx = 0
         timed_out = False
-        while not done_event.wait(timeout=1.0):
+        streamed = ""
+        result = None
+        error = None
+        while True:
             elapsed = time.monotonic() - start
             if elapsed >= _TIMEOUT_S:
                 timed_out = True
                 break
-            if elapsed >= _FIRST_MSG_DELAY_S + msg_idx * _MSG_INTERVAL_S:
-                status.markdown(
-                    f"*{_SHUFFLED_MESSAGES[msg_idx % len(_SHUFFLED_MESSAGES)]}*"
-                )
-                msg_idx += 1
+            try:
+                event = events.get(timeout=1.0)
+            except Empty:
+                if not streamed and elapsed >= _FIRST_MSG_DELAY_S + msg_idx * _MSG_INTERVAL_S:
+                    status.markdown(
+                        f"*{_SHUFFLED_MESSAGES[msg_idx % len(_SHUFFLED_MESSAGES)]}*"
+                    )
+                    msg_idx += 1
+                continue
+            kind = event.get("type")
+            if kind == "token":
+                status.empty()
+                streamed += event["text"]
+                body.markdown(streamed)
+            elif kind == "result":
+                result = event
+            elif kind == "error":
+                error = event["error"]
+            elif kind == "end":
+                break
 
         status.empty()
 
@@ -175,6 +194,7 @@ if prompt := st.chat_input("Ask about US Census data…"):
                 "The query timed out after 2 minutes. Try asking a more specific "
                 "question or narrowing the geography."
             )
+            body.empty()
             st.warning(msg_text)
             st.session_state.messages.append(
                 {"role": "assistant", "content": msg_text, "rejected": True}
@@ -183,16 +203,17 @@ if prompt := st.chat_input("Ask about US Census data…"):
             exc = result_box["error"]
             print(f"  [app] Unhandled exception: {exc}")
             msg_text = "Something went wrong connecting to the data source. Please try again."
+            body.empty()
             st.error(msg_text)
             st.session_state.messages.pop()
-        else:
-            result = result_box["result"]
+        elif result is not None:
             stored = {
                 "role": "assistant",
-                "content": result["answer"],
+                "content": result["answer"] or streamed,
                 "sql": result["sql"],
                 "confidence": result["confidence"],
                 "rejected": result["rejected"],
             }
+            body.empty()
             _render_assistant_msg(stored)
             st.session_state.messages.append(stored)

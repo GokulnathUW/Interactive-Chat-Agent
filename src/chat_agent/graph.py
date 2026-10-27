@@ -44,18 +44,59 @@ def _last_ai_text(messages) -> str:
     return ""
 
 
-def run(query: str, session: Session, thread_id: str) -> dict:
-    """Invoke the parent graph. thread_id selects the checkpointed conversation."""
-    result = graph.invoke(
-        {"messages": [HumanMessage(content=query)]},
-        context=AgentContext(session=session),
-        config={"configurable": {"thread_id": thread_id}},
-    )
-    scope = result.get("input_scope")
-    score = result.get("output_score")
+def _chunk_text(message) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text") or "")
+        return "".join(parts)
+    return ""
+
+
+def _from_generator(ns) -> bool:
+    return any(str(part).startswith("generator") for part in (ns or ()))
+
+
+def _result_from_state(state: dict) -> dict:
+    scope = state.get("input_scope")
+    score = state.get("output_score")
     return {
-        "answer": _last_ai_text(result["messages"]),
-        "sql": result.get("sql") or "",
+        "answer": _last_ai_text(state.get("messages") or []),
+        "sql": state.get("sql") or "",
         "confidence": score.decision if score is not None else "",
         "rejected": scope is not None and scope.decision == "INVALID",
     }
+
+
+def run(query: str, session: Session, thread_id: str):
+    """Stream the parent graph. Yields token dicts, then one result dict."""
+    config = {"configurable": {"thread_id": thread_id}}
+    last_state = None
+    for chunk in graph.stream(
+        {"messages": [HumanMessage(content=query)]},
+        context=AgentContext(session=session),
+        config=config,
+        stream_mode=["messages", "values"],
+        subgraphs=True,
+        version="v2",
+    ):
+        kind = chunk["type"]
+        ns = chunk.get("ns") or ()
+        if kind == "messages" and _from_generator(ns):
+            token, _metadata = chunk["data"]
+            if getattr(token, "tool_call_chunks", None):
+                continue
+            text = _chunk_text(token)
+            if text:
+                yield {"type": "token", "text": text}
+        elif kind == "values" and not ns:
+            last_state = chunk["data"]
+    if last_state is None:
+        last_state = graph.get_state(config).values
+    yield {"type": "result", **_result_from_state(last_state)}
